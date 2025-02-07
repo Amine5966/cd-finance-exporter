@@ -93,7 +93,7 @@ export async function convertToExcel(csvData: string) {
     type: "array",
     cellDates: true,
     dateNF: "DD-MMM-YYYY"
-  })
+  } as XLSX.WritingOptions)
 
   console.debug("===== Excel conversion completed =====")
   return {
