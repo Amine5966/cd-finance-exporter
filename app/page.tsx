@@ -4,7 +4,8 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { fetchHubs, fetchCSVData, convertToExcel } from "../utils/dataUtils"
+import { Checkbox } from "@/components/ui/checkbox"
+import { fetchHubs, fetchCSVData, convertToExcel, fetchAllHubsData } from "../utils/dataUtils"
 import axios from "axios"
 
 async function login() {
@@ -24,8 +25,10 @@ async function login() {
 export default function Home() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   const [hubs, setHubs] = useState<Array<{ id: string; name: string }>>([])
   const [selectedHub, setSelectedHub] = useState<string | null>(null)
+  const [selectAllHubs, setSelectAllHubs] = useState(false)
 
   useEffect(() => {
     const loadHubs = () => {
@@ -42,32 +45,42 @@ export default function Home() {
   }, [])
 
   const handleConvert = async () => {
-    if (!selectedHub) {
-      setError("Please select a hub first.")
+    if (!selectAllHubs && !selectedHub) {
+      setError("Please select a hub or choose to convert all hubs.")
       return
     }
 
     setIsLoading(true)
     setError(null)
+    setSuccess(null)
 
     try {
       const accessToken = await login()
-      const csvData = await fetchCSVData(accessToken, selectedHub)
-      const excelBuffer = await convertToExcel(csvData)
+      let result
 
-      // Create a Blob from the Excel buffer
-      const blob = new Blob([excelBuffer], {
+      if (selectAllHubs) {
+        const allHubsData = await fetchAllHubsData(accessToken)
+        result = await convertToExcel(allHubsData)
+      } else {
+        const csvData = await fetchCSVData(accessToken, selectedHub!)
+        result = await convertToExcel(csvData)
+      }
+
+      // Create main Excel file
+      const mainBlob = new Blob([result.mainBuffer], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       })
 
-      // Create a download link and trigger the download
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement("a")
-      link.href = url
-      link.setAttribute("download", "converted_data.xlsx")
-      document.body.appendChild(link)
-      link.click()
-      link.parentNode?.removeChild(link)
+      // Download main file
+      const mainUrl = window.URL.createObjectURL(mainBlob)
+      const mainLink = document.createElement("a")
+      mainLink.href = mainUrl
+      mainLink.setAttribute("download", selectAllHubs ? "all_hubs_data.xlsx" : `${selectedHub}_data.xlsx`)
+      document.body.appendChild(mainLink)
+      mainLink.click()
+      mainLink.parentNode?.removeChild(mainLink)
+
+      setSuccess("Conversion successful! The Excel file has been downloaded.")
     } catch (err) {
       setError("An error occurred during the conversion process.")
       console.error(err)
@@ -84,7 +97,20 @@ export default function Home() {
           <CardDescription>Select a hub and convert CSV to Excel</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Select onValueChange={setSelectedHub}>
+          <div className="flex items-center space-x-2 mb-4">
+            <Checkbox
+              id="selectAllHubs"
+              checked={selectAllHubs}
+              onCheckedChange={(checked) => {
+                setSelectAllHubs(checked as boolean)
+                if (checked) {
+                  setSelectedHub(null)
+                }
+              }}
+            />
+            <label htmlFor="selectAllHubs">Convert data for all hubs</label>
+          </div>
+          <Select onValueChange={setSelectedHub} disabled={selectAllHubs}>
             <SelectTrigger>
               <SelectValue placeholder="Select a hub" />
             </SelectTrigger>
@@ -96,10 +122,11 @@ export default function Home() {
               ))}
             </SelectContent>
           </Select>
-          <Button onClick={handleConvert} disabled={isLoading || !selectedHub}>
+          <Button onClick={handleConvert} disabled={isLoading || (!selectAllHubs && !selectedHub)}>
             {isLoading ? "Converting..." : "Convert CSV to Excel"}
           </Button>
           {error && <p className="text-red-500 mt-2">{error}</p>}
+          {success && <p className="text-green-500 mt-2">{success}</p>}
         </CardContent>
       </Card>
     </div>
